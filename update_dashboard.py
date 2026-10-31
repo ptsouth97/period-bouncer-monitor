@@ -5,7 +5,6 @@ import os
 from datetime import datetime, timezone, timedelta
 from astropy.time import Time
 import time
-import base64
 from datetime import datetime
 from config import API_TOKEN
 
@@ -18,7 +17,7 @@ headers = {
     "Authorization": f"Token {API_TOKEN}"
 }
 
-os.makedirs("dashboard", exist_ok=True)
+os.makedirs("dashboard/plots", exist_ok=True)
 
 targets_df = pd.read_csv("dummy_targets.csv")
 
@@ -130,7 +129,7 @@ def make_lightcurve(df, target):
     filename = target.replace(" ", "_")
 
     plt.savefig(
-        f"plots/{filename}.png",
+        f"dashboard/plots/{filename}.png",
         dpi=150
     )
 
@@ -143,15 +142,53 @@ def make_lightcurve(df, target):
 
 os.makedirs("plots", exist_ok=True)
 
+all_data = {}
+
 for target in targets:
 
     print(f"Downloading {target}")
 
     df = get_aavso_data(target)
 
+    all_data[target] = df
+
     make_lightcurve(df, target)
 
 
+outburst_scores = {}
+
+for target in targets:
+
+    df = all_data[target]
+
+    if len(df) == 0:
+        outburst_scores[target] = float("-inf")
+        continue
+
+    mags = pd.to_numeric(
+        df["magnitude"],
+        errors="coerce"
+    ).dropna()
+
+    if len(mags) < 5:
+        outburst_scores[target] = -999
+        continue
+
+    baseline = mags.median()
+
+    recent_mag = mags.tail(
+        min(5, len(mags))
+    ).median()
+
+    score = baseline - recent_mag
+
+    outburst_scores[target] = score
+
+sorted_targets = sorted(
+    targets,
+    key=lambda t: outburst_scores.get(t, -999),
+    reverse=True
+)
 html = """
 <!DOCTYPE html>
 <html>
@@ -194,21 +231,24 @@ body {
 <div class="grid">
 """
 
-for target in targets:
+for target in sorted_targets:
 
     filename = target.replace(" ", "_")
 
-    filepath = f"plots/{filename}.png"
+    filepath = f"dashboard/plots/{filename}.png"
+    score = outburst_scores.get(target, 0)
+
+    stats_html = f"""
+    <p>
+    <b>Outburst Score:</b> {score:.2f}
+    </p>
+    """
 
     if os.path.exists(filepath):
 
-        with open(filepath, "rb") as f:
-            encoded = base64.b64encode(
-                f.read()
-            ).decode("utf-8")
-
         img_html = f'''
-        <img src="data:image/png;base64,{encoded}">
+        <img src="plots/{filename}.png"
+        alt="{target} Lightcurve">
         '''
 
     else:
@@ -220,7 +260,11 @@ for target in targets:
     html += f"""
     <div class="card">
         <h2>{target}</h2>
+
+        {stats_html}
+
         {img_html}
+
     </div>
     """
 
