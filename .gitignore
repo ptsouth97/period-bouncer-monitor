@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environments
+venv/
+
+# IDEs
+.vscode/
+.idea/
+
+# Generated plots
+plots/
+
+# Generated dashboard
+dashboard/
+
+# Downloaded data
+data/
+
+# Logs
+*.log
+
+# Secrets
+config.py
+
+# OS files
+.DS_Store
