@@ -23,7 +23,7 @@ os.makedirs("dashboard/plots", exist_ok=True)
 os.makedirs("cache", exist_ok=True)
 USE_CACHE = True
 
-targets_df = pd.read_csv("dummy_targets.csv")
+targets_df = pd.read_csv("targets.csv")
 
 observatories = pd.read_csv(
     "observatories.csv"
@@ -233,6 +233,13 @@ for target in targets:
             tier_weight[tier] + 100
         )
 
+        needs_observations.append(
+            (
+                target,
+                "No observations in last 100 days"
+            )
+        )
+
         continue
 
 
@@ -307,7 +314,7 @@ for target in targets:
     )
 
     priority_scores[target] = priority
-
+    
     if age_days >= 30:
         needs_observations.append(
             (target, age_days)
@@ -367,7 +374,6 @@ for target in targets:
         "altitude": best_metrics["max_altitude"],
         "best_time": best_metrics["best_time"]
     }
-
 
 needs_observations.sort(
     key=lambda x: x[1],
@@ -430,13 +436,23 @@ if len(needs_observations) == 0:
 
 else:
 
-    for target, age_days in needs_observations:
+    for target, info in needs_observations:
 
-        html += f"""
-        <li>
-        {target}: {age_days} days since last observation
-        </li>
-        """
+        if isinstance(info, str):
+
+            html += f"""
+            <li>
+            {target}: {info}
+            </li>
+            """
+
+        else:
+
+            html += f"""
+            <li>
+            {target}: {info} days since last observation
+            </li>
+            """
 
 html += """
 </ul>
