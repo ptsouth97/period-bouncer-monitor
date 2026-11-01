@@ -20,6 +20,9 @@ headers = {
 
 os.makedirs("dashboard/plots", exist_ok=True)
 
+os.makedirs("cache", exist_ok=True)
+USE_CACHE = True
+
 targets_df = pd.read_csv("dummy_targets.csv")
 
 observatories = pd.read_csv(
@@ -153,15 +156,55 @@ for target in targets:
 
     print(f"Downloading {target}")
 
-    df = get_aavso_data(target)
+    filename = target.replace(" ", "_")
+
+    cache_file = f"cache/{filename}.csv"
+
+    if USE_CACHE and os.path.exists(cache_file):
+
+        print(
+            f"Loading cached data for {target}"
+        )
+
+        try:
+
+            df = pd.read_csv(cache_file)
+
+        except pd.errors.EmptyDataError:
+
+            print(
+                f"Empty cache file for {target}"
+            )
+
+            df = pd.DataFrame()
+       
+
+    else:
+
+        df = get_aavso_data(target)
+
+        if len(df) > 0:
+
+            df.to_csv(
+                cache_file,
+                index=False
+            )
 
     all_data[target] = df
+
+    filename = target.replace(" ", "_")
+
+    df.to_csv(
+        f"cache/{filename}.csv",
+        index=False
+    )
 
     make_lightcurve(df, target)
 
 
 outburst_scores = {}
 days_since_observation = {}
+priority_scores = {}
 needs_observations = []
 
 for target in targets:
@@ -169,8 +212,29 @@ for target in targets:
     df = all_data[target]
 
     if len(df) == 0:
+
         outburst_scores[target] = float("-inf")
+
+        days_since_observation[target] = 999
+
+        target_row = targets_df[
+            targets_df["name"] == target
+        ].iloc[0]
+
+        tier = target_row["tier"]
+
+        tier_weight = {
+            1: 100,
+            2: 50,
+            3: 0
+        }
+
+        priority_scores[target] = (
+            tier_weight[tier] + 999
+        )
+
         continue
+
 
     mags = pd.to_numeric(
         df["magnitude"],
@@ -178,8 +242,27 @@ for target in targets:
     ).dropna()
 
     if len(mags) < 5:
+
         outburst_scores[target] = -999
+
+        latest_jd = df["jd_dbl"].max()
+
+        latest_obs = Time(
+            latest_jd,
+            format="jd"
+        ).to_datetime()
+
+        age_days = (
+            datetime.utcnow()
+            - latest_obs
+        ).days
+
+        days_since_observation[target] = age_days
+
+        priority_scores[target] = age_days
+
         continue
+
 
     baseline = mags.median()
 
@@ -205,6 +288,26 @@ for target in targets:
 
     days_since_observation[target] = age_days
 
+    target_row = targets_df[
+        targets_df["name"] == target
+    ].iloc[0]
+
+    tier = target_row["tier"]
+
+    tier_weight = {
+        1: 100,
+        2: 50,
+        3: 0
+    }
+
+    priority = (
+        tier_weight[tier]
+        + max(0, score) * 20
+        + min(age_days, 60)
+    )
+
+    priority_scores[target] = priority
+
     if age_days >= 30:
         needs_observations.append(
             (target, age_days)
@@ -212,7 +315,7 @@ for target in targets:
 
 sorted_targets = sorted(
     targets,
-    key=lambda t: outburst_scores.get(t, -999),
+    key=lambda t: priority_scores.get(t, -999),
     reverse=True
 )
 
@@ -352,9 +455,11 @@ for target in sorted_targets:
     hours = visibility_data[target]["hours"]
     altitude = visibility_data[target]["altitude"]
     best_time = visibility_data[target]["best_time"]
+    priority = priority_scores[target]
 
     stats_html = f"""
     <div style="margin-bottom:15px; line-height:1.6;">
+    <b>Priority Score:</b> {priority:.1f}<br>
     <b>Outburst Score:</b> {score:.2f}<br>
     <b>Days Since Observation:</b> {age_days}<br>
     <b>Best Observatory:</b> {site}<br>
