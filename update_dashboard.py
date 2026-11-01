@@ -156,6 +156,8 @@ for target in targets:
 
 
 outburst_scores = {}
+days_since_observation = {}
+needs_observations = []
 
 for target in targets:
 
@@ -184,11 +186,36 @@ for target in targets:
 
     outburst_scores[target] = score
 
+    latest_jd = df["jd_dbl"].max()
+
+    latest_obs = Time(
+        latest_jd,
+        format="jd"
+    ).to_datetime()
+
+    age_days = (
+        datetime.utcnow()
+        - latest_obs
+    ).days
+
+    days_since_observation[target] = age_days
+
+    if age_days >= 30:
+        needs_observations.append(
+            (target, age_days)
+        )
+
 sorted_targets = sorted(
     targets,
     key=lambda t: outburst_scores.get(t, -999),
     reverse=True
 )
+
+needs_observations.sort(
+    key=lambda x: x[1],
+    reverse=True
+)
+
 html = """
 <!DOCTYPE html>
 <html>
@@ -228,6 +255,34 @@ body {
 
 <h1>Period Bouncer Monitor</h1>
 
+<p>
+Last Updated: """ + update_time + """
+</p>
+
+<h2>Needs Observations</h2>
+
+<ul>
+"""
+
+if len(needs_observations) == 0:
+
+    html += """
+    <p>No targets currently require additional observations.</p>
+    """
+
+else:
+
+    for target, age_days in needs_observations:
+
+        html += f"""
+        <li>
+        {target}: {age_days} days since last observation
+        </li>
+        """
+
+html += """
+</ul>
+
 <div class="grid">
 """
 
@@ -238,9 +293,15 @@ for target in sorted_targets:
     filepath = f"dashboard/plots/{filename}.png"
     score = outburst_scores.get(target, 0)
 
+    age_days = days_since_observation.get(
+    target,
+    "Unknown"
+)
+
     stats_html = f"""
     <p>
-    <b>Outburst Score:</b> {score:.2f}
+    <b>Outburst Score:</b> {score:.2f}<br>
+    <b>Days Since Observation:</b> {age_days}
     </p>
     """
 
