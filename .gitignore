@@ -2,6 +2,9 @@
 __pycache__/
 *.pyc
 
+# Cached light curve data
+cache/
+
 # Virtual environments
 venv/
 
