@@ -213,9 +213,9 @@ for target in targets:
 
     if len(df) == 0:
 
-        outburst_scores[target] = float("-inf")
+        outburst_scores[target] = None
 
-        days_since_observation[target] = 999
+        days_since_observation[target] = None
 
         target_row = targets_df[
             targets_df["name"] == target
@@ -230,7 +230,7 @@ for target in targets:
         }
 
         priority_scores[target] = (
-            tier_weight[tier] + 999
+            tier_weight[tier] + 100
         )
 
         continue
@@ -311,6 +311,11 @@ for target in targets:
     if age_days >= 30:
         needs_observations.append(
             (target, age_days)
+        )
+
+    if age_days is None:
+        needs_observations.append(
+            (target, "No recent observations")
         )
 
 sorted_targets = sorted(
@@ -444,30 +449,51 @@ for target in sorted_targets:
     filename = target.replace(" ", "_")
 
     filepath = f"dashboard/plots/{filename}.png"
-    score = outburst_scores.get(target, 0)
 
-    age_days = days_since_observation.get(
-    target,
-    "Unknown"
-)
-
-    site = visibility_data[target]["site"]
-    hours = visibility_data[target]["hours"]
-    altitude = visibility_data[target]["altitude"]
-    best_time = visibility_data[target]["best_time"]
+    score = outburst_scores.get(target)
+    
     priority = priority_scores[target]
 
-    stats_html = f"""
-    <div style="margin-bottom:15px; line-height:1.6;">
-    <b>Priority Score:</b> {priority:.1f}<br>
-    <b>Outburst Score:</b> {score:.2f}<br>
-    <b>Days Since Observation:</b> {age_days}<br>
-    <b>Best Observatory:</b> {site}<br>
-    <b>Observable Hours:</b> {hours}<br>
-    <b>Max Altitude:</b> {altitude:.1f} <br>
-    <b>Best Time:</b> {best_time}
-    </div>
-    """
+    age_days = days_since_observation.get(
+        target,
+        "Unknown"
+    )
+
+    site = visibility_data[target]["site"]
+    
+    hours = visibility_data[target]["hours"]
+
+    altitude = visibility_data[target]["altitude"]
+
+    best_time = visibility_data[target]["best_time"]
+
+
+    if score is None:
+
+        stats_html = f"""
+        <div style="margin-bottom:15px; line-height:1.6;">
+        <b>Priority Score:</b> {priority:.1f}<br>
+        <b>Status:</b> No AAVSO observations during the last 100 days.<br>
+        <b>Best Observatory:</b> {site}<br>
+        <b>Observable Hours:</b> {hours:.1f}<br>
+        <b>Max Altitude:</b> {altitude:.1f}°<br>
+        <b>Best Time:</b> {best_time}
+        </div>
+        """
+
+    else: 
+
+        stats_html = f"""
+        <div style="margin-bottom:15px; line-height:1.6;">
+        <b>Priority Score:</b> {priority:.1f}<br>
+        <b>Outburst Score:</b> {score:.2f}<br>
+        <b>Days Since Observation:</b> {age_days}<br>
+        <b>Best Observatory:</b> {site}<br>
+        <b>Observable Hours:</b> {hours:.1f}<br>
+        <b>Max Altitude:</b> {altitude:.1f}°<br>
+        <b>Best Time:</b> {best_time}
+        </div>
+        """
 
     if os.path.exists(filepath):
 
