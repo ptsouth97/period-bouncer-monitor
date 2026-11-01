@@ -7,6 +7,7 @@ from astropy.time import Time
 import time
 from datetime import datetime
 from config import API_TOKEN
+from visibility import get_visibility_metrics
 
 
 update_time = datetime.now().strftime(
@@ -20,6 +21,10 @@ headers = {
 os.makedirs("dashboard/plots", exist_ok=True)
 
 targets_df = pd.read_csv("dummy_targets.csv")
+
+observatories = pd.read_csv(
+    "observatories.csv"
+)
 
 targets = targets_df["name"].tolist()
 
@@ -211,6 +216,51 @@ sorted_targets = sorted(
     reverse=True
 )
 
+visibility_data = {}
+
+for target in targets:
+
+    target_row = targets_df[
+        targets_df["name"] == target
+    ].iloc[0]
+
+    best_site = None
+    best_metrics = None
+    best_hours = -1
+
+    for _, site in observatories.iterrows():
+
+        metrics = get_visibility_metrics(
+            target_row["ra"],
+            target_row["dec"],
+            site["latitude"],
+            site["longitude"],
+            site["elevation_m"]
+        )
+
+        if (
+            metrics["observable_hours"]
+            > best_hours
+        ):
+
+            best_hours = (
+                metrics["observable_hours"]
+            )
+
+            best_site = (
+                site["name"]
+            )
+
+            best_metrics = metrics
+
+    visibility_data[target] = {
+        "site": best_site,
+        "hours": best_metrics["observable_hours"],
+        "altitude": best_metrics["max_altitude"],
+        "best_time": best_metrics["best_time"]
+    }
+
+
 needs_observations.sort(
     key=lambda x: x[1],
     reverse=True
@@ -298,11 +348,20 @@ for target in sorted_targets:
     "Unknown"
 )
 
+    site = visibility_data[target]["site"]
+    hours = visibility_data[target]["hours"]
+    altitude = visibility_data[target]["altitude"]
+    best_time = visibility_data[target]["best_time"]
+
     stats_html = f"""
-    <p>
+    <div style="margin-bottom:15px; line-height:1.6;">
     <b>Outburst Score:</b> {score:.2f}<br>
-    <b>Days Since Observation:</b> {age_days}
-    </p>
+    <b>Days Since Observation:</b> {age_days}<br>
+    <b>Best Observatory:</b> {site}<br>
+    <b>Observable Hours:</b> {hours}<br>
+    <b>Max Altitude:</b> {altitude:.1f} <br>
+    <b>Best Time:</b> {best_time}
+    </div>
     """
 
     if os.path.exists(filepath):
