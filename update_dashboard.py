@@ -236,7 +236,7 @@ for target in targets:
         needs_observations.append(
             (
                 target,
-                "No observations in last 100 days"
+                float("inf")
             )
         )
 
@@ -315,7 +315,21 @@ for target in targets:
 
     priority_scores[target] = priority
     
-    if age_days >= 30:
+    tier_thresholds = {
+        1: 4,
+        2: 7,
+        3: 14
+    }
+
+    threshold = tier_thresholds[tier]
+
+    if age_days >= threshold:
+        needs_observations.append(
+            (
+                target,
+                age_days
+            )
+        ) 
         needs_observations.append(
             (target, age_days)
         )
@@ -380,6 +394,31 @@ needs_observations.sort(
     reverse=True
 )
 
+tonight_priority_scores = {}
+
+for target in targets:
+
+    hours = visibility_data[target]["hours"]
+
+    if hours < 1:
+
+        tonight_priority = 0
+
+    else:
+
+        tonight_priority = (
+            priority_scores[target]
+            + hours * 5
+        )
+
+    tonight_priority_scores[target] = tonight_priority
+
+sorted_tonight_targets = sorted(
+    targets,
+    key=lambda t: tonight_priority_scores[t],
+    reverse=True
+)
+
 html = """
 <!DOCTYPE html>
 <html>
@@ -392,6 +431,20 @@ body {
     font-family: Arial, sans-serif;
     margin: 20px;
     background-color: #f5f5f5;
+}
+
+.summary-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 30px;
+    margin-bottom: 30px;
+}
+
+.summary-box {
+    background: white;
+    padding: 15px;
+    border-radius: 10px;
+    box-shadow: 0px 2px 5px rgba(0,0,0,0.2);
 }
 
 .grid {
@@ -422,6 +475,37 @@ body {
 <p>
 Last Updated: """ + update_time + """
 </p>
+"""
+html += """
+<div class="summary-grid">
+
+<div class="summary-box">
+
+<h2>Tonight's Highest Priority Targets</h2>
+
+<ul>
+"""
+
+for target in sorted_tonight_targets[:5]:
+
+    site = visibility_data[target]["site"]
+    hours = visibility_data[target]["hours"]
+
+    html += f"""
+    <li>
+    <b>{target}</b><br>
+    Priority: {tonight_priority_scores[target]:.1f}<br>
+    Best Observatory: {site}<br>
+    Observable Hours: {hours:.1f}
+    </li>
+    """
+
+html += """
+</ul>
+
+</div>
+
+<div class="summary-box">
 
 <h2>Needs Observations</h2>
 
@@ -438,25 +522,43 @@ else:
 
     for target, info in needs_observations:
 
-        if isinstance(info, str):
+        if info == float("inf"):
 
             html += f"""
             <li>
-            {target}: {info}
+            {target}: No observations in last 100 days
             </li>
             """
-
+        
         else:
+
+            target_row = targets_df[
+                targets_df["name"] == target
+            ].iloc[0]
+
+            tier = target_row["tier"]
+
+            thresholds = {
+                1: 4,
+                2: 7,
+                3: 14
+            }
 
             html += f"""
             <li>
             {target}: {info} days since last observation
+            (Tier {tier}, threshold {thresholds[tier]} days)
             </li>
-            """
+            """       
 
 html += """
 </ul>
 
+</div>
+
+</div>
+"""
+html += """
 <div class="grid">
 """
 
@@ -476,12 +578,10 @@ for target in sorted_targets:
     )
 
     site = visibility_data[target]["site"]
-    
     hours = visibility_data[target]["hours"]
-
     altitude = visibility_data[target]["altitude"]
-
     best_time = visibility_data[target]["best_time"]
+    observable_tonight = hours >= 1
 
 
     if score is None:
@@ -490,10 +590,15 @@ for target in sorted_targets:
         <div style="margin-bottom:15px; line-height:1.6;">
         <b>Priority Score:</b> {priority:.1f}<br>
         <b>Status:</b> No AAVSO observations during the last 100 days.<br>
-        <b>Best Observatory:</b> {site}<br>
-        <b>Observable Hours:</b> {hours:.1f}<br>
-        <b>Max Altitude:</b> {altitude:.1f}°<br>
-        <b>Best Time:</b> {best_time}
+        {
+            f"<b>Visibility:</b> Not Observable Tonight"
+            if not observable_tonight
+            else
+            f"<b>Best Observatory:</b> {site}<br>"
+            f"<b>Observable Hours:</b> {hours:.1f}<br>"
+            f"<b>Max Altitude:</b> {altitude:.1f}°<br>"
+            f"<b>Best Time:</b> {best_time}"
+        }
         </div>
         """
 
@@ -504,10 +609,15 @@ for target in sorted_targets:
         <b>Priority Score:</b> {priority:.1f}<br>
         <b>Outburst Score:</b> {score:.2f}<br>
         <b>Days Since Observation:</b> {age_days}<br>
-        <b>Best Observatory:</b> {site}<br>
-        <b>Observable Hours:</b> {hours:.1f}<br>
-        <b>Max Altitude:</b> {altitude:.1f}°<br>
-        <b>Best Time:</b> {best_time}
+        {
+            f"<b>Visibility:</b> Not Observable Tonight"
+            if not observable_tonight
+            else
+            f"<b>Best Observatory:</b> {site}<br>"
+            f"<b>Observable Hours:</b> {hours:.1f}<br>"
+            f"<b>Max Altitude:</b> {altitude:.1f}°<br>"
+            f"<b>Best Time:</b> {best_time}"
+        }
         </div>
         """
 
