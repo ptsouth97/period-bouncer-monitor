@@ -6,9 +6,16 @@ from datetime import datetime, timezone, timedelta
 from astropy.time import Time
 import time
 from datetime import datetime
-from config import API_TOKEN
+from config import (
+    API_TOKEN,
+    EMAIL_SENDER,
+    EMAIL_PASSWORD,
+    EMAIL_RECIPIENT
+)
 from visibility import get_visibility_metrics
+import smtplib
 
+from email.message import EmailMessage
 
 update_time = datetime.now().strftime(
     "%Y-%m-%d %H:%M:%S"
@@ -144,6 +151,32 @@ def make_lightcurve(df, target):
     plt.close()
 
     print(f"Saved plots/{filename}.png")
+
+
+def send_summary_email(
+    subject,
+    body
+):
+
+    msg = EmailMessage()
+
+    msg["Subject"] = subject
+    msg["From"] = EMAIL_SENDER
+    msg["To"] = EMAIL_RECIPIENT
+
+    msg.set_content(body)
+
+    with smtplib.SMTP_SSL(
+        "smtp.gmail.com",
+        465
+    ) as server:
+
+        server.login(
+            EMAIL_SENDER,
+            EMAIL_PASSWORD
+        )
+
+        server.send_message(msg)
 
 
 ### Main program ###
@@ -652,4 +685,41 @@ with open(
     f.write(html)
 
 print("Dashboard created.")
+
+email_body = ""
+
+email_body += (
+    "Period Bouncer Monitor\n\n"
+)
+
+email_body += (
+    "Tonight's Highest Priority Targets\n"
+)
+
+email_body += (
+    "----------------------------\n"
+)
+
+for target in sorted_tonight_targets[:5]:
+
+    site = visibility_data[target]["site"]
+
+    hours = visibility_data[target]["hours"]
+
+    score = tonight_priority_scores[target]
+
+    email_body += (
+        f"{target}\n"
+        f"  Priority: {score:.1f}\n"
+        f"  Site: {site}\n"
+        f"  Observable Hours: {hours:.1f}\n\n"
+    )
+
+send_summary_email(
+    subject=
+    "Period Bouncer Monitor - Nightly Summary",
+
+    body=email_body
+)
+
 print("Finished")
