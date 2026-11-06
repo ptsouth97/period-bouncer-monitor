@@ -21,7 +21,7 @@ headers = {
 os.makedirs("dashboard/plots", exist_ok=True)
 
 os.makedirs("cache", exist_ok=True)
-USE_CACHE = True
+USE_CACHE = False
 
 targets_df = pd.read_csv("targets.csv")
 
@@ -330,14 +330,6 @@ for target in targets:
                 age_days
             )
         ) 
-        needs_observations.append(
-            (target, age_days)
-        )
-
-    if age_days is None:
-        needs_observations.append(
-            (target, "No recent observations")
-        )
 
 sorted_targets = sorted(
     targets,

@@ -1,5 +1,6 @@
 import numpy as np
 import astropy.units as u
+import warnings
 
 from astropy.coordinates import (
     SkyCoord,
@@ -11,7 +12,18 @@ from astropy.coordinates import (
 from astropy.time import Time
 from astropy.utils import iers
 
+
 iers.conf.auto_download = False
+iers.conf.iers_degraded_accuracy = "ignore"
+
+warnings.filterwarnings(
+    "ignore",
+    message=".*polar motions.*"
+)
+warnings.filterwarnings(
+    "ignore",
+    category=iers.IERSWarning
+)
 
 
 def classify_visibility(observable_hours):
