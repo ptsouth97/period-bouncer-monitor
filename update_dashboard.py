@@ -28,7 +28,6 @@ headers = {
 os.makedirs("dashboard/plots", exist_ok=True)
 
 os.makedirs("cache", exist_ok=True)
-USE_CACHE = False
 
 targets_df = pd.read_csv("targets.csv")
 
@@ -103,6 +102,131 @@ def get_aavso_data(target, days=100):
             )
 
     return df
+
+
+def update_cached_data(
+    target,
+    cache_file
+):
+
+    if not os.path.exists(cache_file):
+
+        print(
+            f"No cache for {target}, "
+            f"performing full download"
+        )
+
+        df = get_aavso_data(target)
+
+        if len(df) > 0:
+
+            df.to_csv(
+                cache_file,
+                index=False
+            )
+
+        return df
+
+    try:
+
+        cached_df = pd.read_csv(
+            cache_file
+        )
+
+    except pd.errors.EmptyDataError:
+
+        print(
+            f"Empty cache file for {target}, "
+            f"rebuilding cache"
+        )
+
+    os.remove(cache_file)
+
+    df = get_aavso_data(target)
+
+    if len(df) > 0:
+
+        df.to_csv(
+            cache_file,
+            index=False
+        )
+
+    return df
+
+
+    if len(cached_df) == 0:
+
+        return cached_df
+
+    latest_jd = (
+        cached_df["jd_dbl"]
+        .max()
+    )
+
+    latest_date = Time(
+        latest_jd,
+        format="jd"
+    ).datetime.date()
+
+    end_date = (
+        datetime.now(
+            timezone.utc
+        ).date()
+    )
+
+    if latest_date >= end_date:
+
+        print(
+            f"{target}: cache up to date"
+        )
+
+        return cached_df    
+
+    if latest_date >= end_date:
+
+        print(
+            f"{target}: cache up to date"
+        )
+
+        return cached_df
+
+    print(
+        f"{target}: checking for updates"
+    )
+
+    new_df = get_aavso_data(
+        target,
+        days=30
+    )
+
+    if len(new_df) == 0:
+
+        return cached_df
+
+    combined_df = pd.concat(
+        [
+            cached_df,
+            new_df
+        ],
+        ignore_index=True
+    )
+
+    combined_df = (
+        combined_df
+        .drop_duplicates(
+            subset=["jd_dbl"]
+        )
+        .sort_values(
+            "jd_dbl"
+        )
+    )
+
+    combined_df.to_csv(
+        cache_file,
+        index=False
+    )
+
+    return combined_df
 
 
 def make_lightcurve(df, target):
@@ -189,48 +313,21 @@ for target in targets:
 
     print(f"Downloading {target}")
 
-    filename = target.replace(" ", "_")
+    filename = (
+        target
+        .replace(" ", "_")
+    )
 
-    cache_file = f"cache/{filename}.csv"
+    cache_file = (
+        f"cache/{filename}.csv"
+    )
 
-    if USE_CACHE and os.path.exists(cache_file):
-
-        print(
-            f"Loading cached data for {target}"
-        )
-
-        try:
-
-            df = pd.read_csv(cache_file)
-
-        except pd.errors.EmptyDataError:
-
-            print(
-                f"Empty cache file for {target}"
-            )
-
-            df = pd.DataFrame()
-       
-
-    else:
-
-        df = get_aavso_data(target)
-
-        if len(df) > 0:
-
-            df.to_csv(
-                cache_file,
-                index=False
-            )
+    df = update_cached_data(
+        target,
+        cache_file
+    )
 
     all_data[target] = df
-
-    filename = target.replace(" ", "_")
-
-    df.to_csv(
-        f"cache/{filename}.csv",
-        index=False
-    )
 
     make_lightcurve(df, target)
 
@@ -715,11 +812,17 @@ for target in sorted_tonight_targets[:5]:
         f"  Observable Hours: {hours:.1f}\n\n"
     )
 
-send_summary_email(
-    subject=
-    "Period Bouncer Monitor - Nightly Summary",
+try:
 
-    body=email_body
-)
+    send_summary_email(
+        subject="Period Bouncer Monitor - Daily Summary",
+        body=email_body
+    )
+
+except Exception as e:
+
+    print(
+        f"Email failed: {e}"
+    )
 
 print("Finished")
