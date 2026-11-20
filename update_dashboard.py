@@ -17,10 +17,6 @@ import smtplib
 
 from email.message import EmailMessage
 
-update_time = datetime.now().strftime(
-    "%Y-%m-%d %H:%M:%S"
-)
-
 headers = {
     "Authorization": f"Token {API_TOKEN}"
 }
@@ -109,6 +105,10 @@ def update_cached_data(
     cache_file
 ):
 
+    print(
+        f"Using cache file: {cache_file}"
+    )
+
     if not os.path.exists(cache_file):
 
         print(
@@ -121,6 +121,18 @@ def update_cached_data(
         if len(df) > 0:
 
             df.to_csv(
+                cache_file,
+                index=False
+            )
+
+        else:
+
+            pd.DataFrame(
+                columns=[
+                    "jd_dbl",
+                    "magnitude"
+                ]
+            ).to_csv(
                 cache_file,
                 index=False
             )
@@ -161,6 +173,10 @@ def update_cached_data(
     latest_jd = (
         cached_df["jd_dbl"]
         .max()
+    )
+
+    print(
+        f"Latest cached JD: {latest_jd}"
     )
 
     latest_date = Time(
@@ -303,7 +319,74 @@ def send_summary_email(
         server.send_message(msg)
 
 
+def get_weather_forecast(
+    latitude,
+    longitude
+):
+
+    url = (
+        "https://api.open-meteo.com/v1/forecast"
+    )
+
+    params = {
+        "latitude": latitude,
+        "longitude": longitude,
+        "hourly": "cloud_cover",
+        "forecast_days": 1
+    }
+
+    try:
+
+        response = requests.get(
+            url,
+            params=params,
+            timeout=30
+        )
+
+        response.raise_for_status()
+
+        data = response.json()
+
+        cloud_cover = (
+            data["hourly"]
+            ["cloud_cover"]
+        )
+
+        avg_cloud = sum(
+            cloud_cover
+        ) / len(cloud_cover)
+
+        return round(avg_cloud, 1)
+
+    except Exception as e:
+
+        print(
+            f"Weather lookup failed:"
+            f" {e}"
+        )
+
+        return 100.0
+
+
 ### Main program ###
+
+weather_data = {}
+
+for _, site in observatories.iterrows():
+
+    cloud_cover = get_weather_forecast(
+        site["latitude"],
+        site["longitude"]
+    )
+
+    weather_data[
+        site["name"]
+    ] = cloud_cover
+
+    print(
+        f"{site['name']}: "
+        f"{cloud_cover}% clouds"
+    )
 
 os.makedirs("plots", exist_ok=True)
 
@@ -479,6 +562,8 @@ for target in targets:
     best_metrics = None
     best_hours = -1
 
+    site_rankings = []
+
     for _, site in observatories.iterrows():
 
         metrics = get_visibility_metrics(
@@ -487,6 +572,27 @@ for target in targets:
             site["latitude"],
             site["longitude"],
             site["elevation_m"]
+        )
+
+        cloud_cover = weather_data[
+            site["name"]
+        ]
+
+        weather_adjusted_score = (
+            metrics["observable_hours"]
+            + metrics["max_altitude"] / 20
+            - cloud_cover / 20
+        )
+
+        site_rankings.append(
+            {
+                "site": site["name"],
+                "hours": metrics["observable_hours"],
+                "altitude": metrics["max_altitude"],
+                "best_time": metrics["best_time"],
+                "cloud_cover": cloud_cover,
+                "score": weather_adjusted_score
+            }
         )
 
         if (
@@ -504,12 +610,31 @@ for target in targets:
 
             best_metrics = metrics
 
+            site_rankings.sort(
+                key=lambda x: x["score"],
+                reverse=True
+            )
+
+
     visibility_data[target] = {
         "site": best_site,
         "hours": best_metrics["observable_hours"],
         "altitude": best_metrics["max_altitude"],
-        "best_time": best_metrics["best_time"]
+        "best_time": best_metrics["best_time"],
+        "rankings": site_rankings
     }
+
+print()
+
+print(target)
+
+for site in site_rankings[:3]:
+
+    print(
+        site["site"],
+        site["cloud_cover"],
+        site["hours"]
+    )
 
 needs_observations.sort(
     key=lambda x: x[1],
@@ -539,6 +664,10 @@ sorted_tonight_targets = sorted(
     targets,
     key=lambda t: tonight_priority_scores[t],
     reverse=True
+)
+
+update_time = datetime.now().strftime(
+    "%Y-%m-%d %H:%M:%S"
 )
 
 html = """
@@ -610,15 +739,28 @@ html += """
 
 for target in sorted_tonight_targets[:5]:
 
-    site = visibility_data[target]["site"]
-    hours = visibility_data[target]["hours"]
+    top_sites = (
+        visibility_data[target]
+        ["rankings"][:3]
+    )
+
+    recommendations = ""
+
+    for site_info in top_sites:
+
+        recommendations += (
+            f"{site_info['site']} "
+            f"({site_info['hours']:.1f} hr, "
+            f"{site_info['cloud_cover']:.1f}% clouds)"
+            "<br>"
+        )
 
     html += f"""
     <li>
     <b>{target}</b><br>
     Priority: {tonight_priority_scores[target]:.1f}<br>
-    Best Observatory: {site}<br>
-    Observable Hours: {hours:.1f}
+    Recommended Observatories:<br>
+    {recommendations}
     </li>
     """
 
@@ -704,7 +846,41 @@ for target in sorted_targets:
     altitude = visibility_data[target]["altitude"]
     best_time = visibility_data[target]["best_time"]
     observable_tonight = hours >= 1
+    top_sites = (
+        visibility_data[target]
+        ["rankings"][:3]
+    )
 
+    recommendations_html = ""
+
+    for rank, site_info in enumerate(
+        top_sites,
+        start=1
+    ):
+
+        recommendations_html += f"""
+        {rank}. {site_info['site']}<br>
+        &nbsp;&nbsp;&nbsp;
+        {site_info['hours']:.1f} hr,
+        {site_info['cloud_cover']:.1f}% clouds
+        <br>
+        """    
+
+    if not observable_tonight:
+
+        visibility_html = (
+            "<b>Visibility:</b> "
+            "Not Observable Tonight"
+        )
+
+    else:
+
+        visibility_html = f"""
+        <b>Recommended Observatories:</b><br>
+        {recommendations_html}
+        <b>Max Altitude:</b> {altitude:.1f}<br>
+        <b>Best Time:</b> {best_time}
+        """
 
     if score is None:
 
@@ -712,15 +888,9 @@ for target in sorted_targets:
         <div style="margin-bottom:15px; line-height:1.6;">
         <b>Priority Score:</b> {priority:.1f}<br>
         <b>Status:</b> No AAVSO observations during the last 100 days.<br>
-        {
-            f"<b>Visibility:</b> Not Observable Tonight"
-            if not observable_tonight
-            else
-            f"<b>Best Observatory:</b> {site}<br>"
-            f"<b>Observable Hours:</b> {hours:.1f}<br>"
-            f"<b>Max Altitude:</b> {altitude:.1f}°<br>"
-            f"<b>Best Time:</b> {best_time}"
-        }
+
+        {visibility_html}
+
         </div>
         """
 
@@ -731,15 +901,9 @@ for target in sorted_targets:
         <b>Priority Score:</b> {priority:.1f}<br>
         <b>Outburst Score:</b> {score:.2f}<br>
         <b>Days Since Observation:</b> {age_days}<br>
-        {
-            f"<b>Visibility:</b> Not Observable Tonight"
-            if not observable_tonight
-            else
-            f"<b>Best Observatory:</b> {site}<br>"
-            f"<b>Observable Hours:</b> {hours:.1f}<br>"
-            f"<b>Max Altitude:</b> {altitude:.1f}°<br>"
-            f"<b>Best Time:</b> {best_time}"
-        }
+
+        {visibility_html}
+
         </div>
         """
 
@@ -799,18 +963,55 @@ email_body += (
 
 for target in sorted_tonight_targets[:5]:
 
-    site = visibility_data[target]["site"]
+    score = (
+        tonight_priority_scores[target]
+    )
 
-    hours = visibility_data[target]["hours"]
-
-    score = tonight_priority_scores[target]
+    top_sites = (
+        visibility_data[target]
+        ["rankings"][:3]
+    )
 
     email_body += (
         f"{target}\n"
         f"  Priority: {score:.1f}\n"
-        f"  Site: {site}\n"
-        f"  Observable Hours: {hours:.1f}\n\n"
+        f"  Recommended Observatories:\n"
     )
+
+    for site_info in top_sites:
+
+        email_body += (
+            f"    - "
+            f"{site_info['site']} "
+            f"({site_info['hours']:.1f} hr, "
+            f"{site_info['cloud_cover']:.1f}% clouds)\n"
+        )
+
+    email_body += "\n"
+
+email_body += (
+    "\nNeeds Observations\n"
+)
+
+email_body += (
+    "------------------\n"
+)
+
+for target, info in needs_observations[:10]:
+
+    if info == float("inf"):
+
+        email_body += (
+            f"{target}: "
+            "No observations in last 100 days\n"
+        )
+
+    else:
+
+        email_body += (
+            f"{target}: "
+            f"{info} days since last observation\n"
+        )
 
 try:
 
