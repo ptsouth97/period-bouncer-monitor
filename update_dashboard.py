@@ -368,6 +368,26 @@ def get_weather_forecast(
         return 100.0
 
 
+def cloud_quality(
+    cloud_cover
+):
+
+    if cloud_cover < 20:
+        return "Excellent"
+
+    elif cloud_cover < 40:
+        return "Good"
+
+    elif cloud_cover < 60:
+        return "Fair"
+
+    elif cloud_cover < 80:
+        return "Poor"
+
+    else:
+        return "Very Poor"
+
+
 ### Main program ###
 
 weather_data = {}
@@ -591,6 +611,9 @@ for target in targets:
                 "altitude": metrics["max_altitude"],
                 "best_time": metrics["best_time"],
                 "cloud_cover": cloud_cover,
+                "quality": cloud_quality(
+                    cloud_cover
+                ),
                 "score": weather_adjusted_score
             }
         )
@@ -751,6 +774,7 @@ for target in sorted_tonight_targets[:5]:
         recommendations += (
             f"{site_info['site']} "
             f"({site_info['hours']:.1f} hr, "
+            f"{site_info['quality']}, "
             f"{site_info['cloud_cover']:.1f}% clouds)"
             "<br>"
         )
@@ -786,34 +810,44 @@ else:
 
     for target, info in needs_observations:
 
+        top_sites = (
+            visibility_data[target]
+            ["rankings"][:3]
+        )
+
+        recommendations = ""
+
+        for site_info in top_sites:
+
+            recommendations += (
+                f"{site_info['site']} "
+                f"({site_info['hours']:.1f} hr, "
+                f"{site_info['quality']}, "
+                f"{site_info['cloud_cover']:.1f}% clouds)"
+                "<br>"
+            )
+
         if info == float("inf"):
 
             html += f"""
             <li>
-            {target}: No observations in last 100 days
+            <b>{target}</b><br>
+            No observations in last 100 days<br>
+            Recommended Observatories:<br>
+            {recommendations}
             </li>
             """
-        
+
         else:
-
-            target_row = targets_df[
-                targets_df["name"] == target
-            ].iloc[0]
-
-            tier = target_row["tier"]
-
-            thresholds = {
-                1: 4,
-                2: 7,
-                3: 14
-            }
 
             html += f"""
             <li>
-            {target}: {info} days since last observation
-            (Tier {tier}, threshold {thresholds[tier]} days)
+            <b>{target}</b><br>
+            {info} days since last observation<br>
+            Recommended Observatories:<br>
+            {recommendations}
             </li>
-            """       
+            """
 
 html += """
 </ul>
@@ -862,6 +896,7 @@ for target in sorted_targets:
         {rank}. {site_info['site']}<br>
         &nbsp;&nbsp;&nbsp;
         {site_info['hours']:.1f} hr,
+        {site_info['quality']}
         {site_info['cloud_cover']:.1f}% clouds
         <br>
         """    
@@ -984,6 +1019,7 @@ for target in sorted_tonight_targets[:5]:
             f"    - "
             f"{site_info['site']} "
             f"({site_info['hours']:.1f} hr, "
+            f"{site_info['quality']}, "
             f"{site_info['cloud_cover']:.1f}% clouds)\n"
         )
 
@@ -997,21 +1033,40 @@ email_body += (
     "------------------\n"
 )
 
-for target, info in needs_observations[:10]:
+for target, info in needs_observations:
+
+    top_sites = (
+        visibility_data[target]
+        ["rankings"][:3]
+    )
 
     if info == float("inf"):
 
         email_body += (
-            f"{target}: "
+            f"\n{target}\n"
             "No observations in last 100 days\n"
+            "Recommended Observatories:\n"
         )
 
     else:
 
         email_body += (
-            f"{target}: "
+            f"\n{target}\n"
             f"{info} days since last observation\n"
+            "Recommended Observatories:\n"
         )
+
+    for site_info in top_sites:
+
+        email_body += (
+            f"  - "
+            f"{site_info['site']} "
+            f"({site_info['hours']:.1f} hr, "
+            f"{site_info['quality']}, "
+            f"{site_info['cloud_cover']:.1f}% clouds)\n"
+        )
+
+    email_body += "\n"
 
 try:
 
