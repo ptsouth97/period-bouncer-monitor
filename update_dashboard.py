@@ -23,6 +23,11 @@ headers = {
 
 os.makedirs("dashboard/plots", exist_ok=True)
 
+os.makedirs(
+    "dashboard/targets",
+    exist_ok=True
+)
+
 os.makedirs("cache", exist_ok=True)
 
 targets_df = pd.read_csv("targets.csv")
@@ -388,6 +393,38 @@ def cloud_quality(
         return "Very Poor"
 
 
+def create_target_page(
+    target
+):
+
+    filename = (
+        target
+        .replace(" ", "_")
+    )
+
+    with open(
+        f"dashboard/targets/{filename}.html",
+        "w",
+        encoding="utf-8"
+    ) as f:
+
+        f.write(
+            f"""
+            <html>
+            <body>
+
+            <h1>{target}</h1>
+
+            <p>
+            Placeholder synopsis page.
+            </p>
+
+            </body>
+            </html>
+            """
+        )
+
+
 ### Main program ###
 
 weather_data = {}
@@ -433,6 +470,10 @@ for target in targets:
     all_data[target] = df
 
     make_lightcurve(df, target)
+
+    create_target_page(
+        target
+    )
 
 
 outburst_scores = {}
@@ -767,6 +808,31 @@ for target in sorted_tonight_targets[:5]:
         ["rankings"][:3]
     )
 
+    best_hours = top_sites[0]["hours"]
+
+    if best_hours < 1:
+
+        if info == float("inf"):
+
+            html += f"""
+            <li>
+            <b>{target}</b><br>
+            No observations in last 100 days<br>
+            Visibility: Not Observable Tonight
+            </li>
+            """
+        else:
+
+            html += f"""
+            <li>
+            <b>{target}</b><br>
+            {info} days since last observation<br>
+            Visibility: Not Observable Tonight
+            </li>
+            """
+
+        continue
+
     recommendations = ""
 
     for site_info in top_sites:
@@ -779,14 +845,27 @@ for target in sorted_tonight_targets[:5]:
             "<br>"
         )
 
-    html += f"""
-    <li>
-    <b>{target}</b><br>
-    Priority: {tonight_priority_scores[target]:.1f}<br>
-    Recommended Observatories:<br>
-    {recommendations}
-    </li>
-    """
+    if best_hours < 1:
+
+        html += f"""
+        <li>
+        <b>{target}</b><br>
+        Priority: {tonight_priority_scores[target]:.1f}<br>
+        Recommended Observatories:<br>
+        {recommendations}
+        </li>
+        """
+
+    else:
+        
+        html += f"""
+        <li>
+        <b>{target}</b><br>
+        Priority: {tonight_priority_scores[target]:.1f}<br>
+        Recommended Observatories:<br>
+        {recommendations}
+        </li>
+        """
 
 html += """
 </ul>
@@ -814,6 +893,32 @@ else:
             visibility_data[target]
             ["rankings"][:3]
         )
+
+        best_hours = top_sites[0]["hours"]
+
+        if best_hours < 1:
+
+            if info == float("inf"):
+
+                html += f"""
+                <li>
+                <b>{target}</b><br>
+                No observations in last 100 days<br>
+                Visibility: Not Observable Tonight
+                </li>
+                """
+
+            else:
+
+                html += f"""
+                <li>
+                <b>{target}</b><br>
+                {info} days since last observation<br>
+                Visibility: Not Observable Tonight
+                </li>
+                """
+
+            continue
 
         recommendations = ""
 
@@ -957,7 +1062,11 @@ for target in sorted_targets:
 
     html += f"""
     <div class="card">
-        <h2>{target}</h2>
+        <h2>
+        <a href="targets/{filename}.html">
+        {target}
+        </a>
+        </h2>
 
         {stats_html}
 
@@ -1007,6 +1116,18 @@ for target in sorted_tonight_targets[:5]:
         ["rankings"][:3]
     )
 
+    best_hours = top_sites[0]["hours"]
+
+    if best_hours < 1:
+
+        email_body += (
+            f"{target}\n"
+            f"  Priority: {score:.1f}\n"
+            "  Visibility: Not Observable Tonight\n\n"
+        )
+
+        continue
+ 
     email_body += (
         f"{target}\n"
         f"  Priority: {score:.1f}\n"
@@ -1039,6 +1160,28 @@ for target, info in needs_observations:
         visibility_data[target]
         ["rankings"][:3]
     )
+
+    best_hours = top_sites[0]["hours"]
+
+    if best_hours < 1:
+
+        if info == float("inf"):
+
+            email_body += (
+                f"\n{target}\n"
+                "No observations in last 100 days\n"
+                "Visibility: Not Observable Tonight\n\n"
+            )
+
+        else:
+
+            email_body += (
+                f"\n{target}\n"
+                f"{info} days since last observation\n"
+                "Visibility: Not Observable Tonight\n\n"
+            )
+
+        continue
 
     if info == float("inf"):
 
