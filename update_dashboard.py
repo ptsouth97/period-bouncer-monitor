@@ -1,4 +1,5 @@
 import requests
+import markdown
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
@@ -402,8 +403,47 @@ def create_target_page(
         .replace(" ", "_")
     )
 
+    synopsis_file = (
+        f"synopses/{filename}.md"
+    )
+
+    output_file = (
+        f"dashboard/targets/{filename}.html"
+    )
+
+    if os.path.exists(
+        synopsis_file
+    ):
+
+        with open(
+            synopsis_file,
+            "r",
+            encoding="utf-8"
+        ) as f:
+
+            md_text = (
+                f.read()
+            )
+
+        body_html = (
+            markdown.markdown(
+                md_text,
+                extensions=[
+                    "tables"
+                ]
+            )
+        )
+
+    else:
+
+        body_html = """
+        <p>
+        Synopsis not yet available.
+        </p>
+        """
+
     with open(
-        f"dashboard/targets/{filename}.html",
+        output_file,
         "w",
         encoding="utf-8"
     ) as f:
@@ -411,15 +451,46 @@ def create_target_page(
         f.write(
             f"""
             <html>
+
+            <head>
+
+            <title>
+            {target}
+            </title>
+
+            <style>
+
+            body {{
+                font-family: Arial, sans-serif;
+                margin: 40px;
+                max-width: 900px;
+            }}
+
+            table {{
+                border-collapse: collapse;
+            }}
+
+            td, th {{
+                border: 1px solid #ccc;
+                padding: 8px;
+            }}
+
+            </style>
+
+            </head>
+
             <body>
 
-            <h1>{target}</h1>
-
             <p>
-            Placeholder synopsis page.
+            <a href="../dashboard.html">
+            &larr; Back to Dashboard
+            </a>
             </p>
 
+            {body_html}
+
             </body>
+
             </html>
             """
         )
