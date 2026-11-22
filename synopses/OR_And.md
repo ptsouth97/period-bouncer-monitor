@@ -23,7 +23,7 @@ More recently, ultraviolet studies classified OR And as a nova-like system obser
 
 Barlow et al. (2022) reported a photometric period of 0.125246 d from TESS observations. Subsequently, Bruch (2023) interpreted the same signal as a negative superhump and adopted an orbital period of 0.13569 d. The VSX catalog lists a period of 0.1359 d (3.26 h) for OR And (Watson et al. 2006).
 
-The relationship between these reported periods remains uncertain and motivates further investigation. However, little recent time-series CCD photometry appears to be available. The complex long-term behavior of OR And makes continued photometric and spectroscopic study valuable. 【1-42b745】
+The relationship between these reported periods remains uncertain and motivates further investigation. However, little recent time-series CCD photometry appears to be available. The complex long-term behavior of OR And makes continued photometric and spectroscopic study valuable.
 
 ## References
 
