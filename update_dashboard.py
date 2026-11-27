@@ -1,5 +1,4 @@
 import requests
-import markdown
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
@@ -14,9 +13,21 @@ from config import (
     EMAIL_RECIPIENT
 )
 from visibility import get_visibility_metrics
-import smtplib
+from weather import (
+    get_weather_forecast,
+    cloud_quality
+)
+from emailer import (
+    send_summary_email
+)
+from synopsis import (
+    create_target_page
+)
+from priority import (
+    evaluate_target,
+    observation_threshold
+)
 
-from email.message import EmailMessage
 
 headers = {
     "Authorization": f"Token {API_TOKEN}"
@@ -158,18 +169,30 @@ def update_cached_data(
             f"rebuilding cache"
         )
 
-    os.remove(cache_file)
+        os.remove(cache_file)
 
-    df = get_aavso_data(target)
+        df = get_aavso_data(target)
 
-    if len(df) > 0:
+        if len(df) > 0:
 
-        df.to_csv(
-            cache_file,
-            index=False
-        )
+            df.to_csv(
+                cache_file,
+                index=False
+            )
 
-    return df
+        else:
+
+            pd.DataFrame(
+                columns=[
+                    "jd_dbl",
+                    "magnitude"
+                ]
+            ).to_csv(
+                cache_file,
+                index=False
+            )
+
+        return df
 
 
     if len(cached_df) == 0:
@@ -299,203 +322,6 @@ def make_lightcurve(df, target):
     print(f"Saved plots/{filename}.png")
 
 
-def send_summary_email(
-    subject,
-    body
-):
-
-    msg = EmailMessage()
-
-    msg["Subject"] = subject
-    msg["From"] = EMAIL_SENDER
-    msg["To"] = EMAIL_RECIPIENT
-
-    msg.set_content(body)
-
-    with smtplib.SMTP_SSL(
-        "smtp.gmail.com",
-        465
-    ) as server:
-
-        server.login(
-            EMAIL_SENDER,
-            EMAIL_PASSWORD
-        )
-
-        server.send_message(msg)
-
-
-def get_weather_forecast(
-    latitude,
-    longitude
-):
-
-    url = (
-        "https://api.open-meteo.com/v1/forecast"
-    )
-
-    params = {
-        "latitude": latitude,
-        "longitude": longitude,
-        "hourly": "cloud_cover",
-        "forecast_days": 1
-    }
-
-    try:
-
-        response = requests.get(
-            url,
-            params=params,
-            timeout=30
-        )
-
-        response.raise_for_status()
-
-        data = response.json()
-
-        cloud_cover = (
-            data["hourly"]
-            ["cloud_cover"]
-        )
-
-        avg_cloud = sum(
-            cloud_cover
-        ) / len(cloud_cover)
-
-        return round(avg_cloud, 1)
-
-    except Exception as e:
-
-        print(
-            f"Weather lookup failed:"
-            f" {e}"
-        )
-
-        return 100.0
-
-
-def cloud_quality(
-    cloud_cover
-):
-
-    if cloud_cover < 20:
-        return "Excellent"
-
-    elif cloud_cover < 40:
-        return "Good"
-
-    elif cloud_cover < 60:
-        return "Fair"
-
-    elif cloud_cover < 80:
-        return "Poor"
-
-    else:
-        return "Very Poor"
-
-
-def create_target_page(
-    target
-):
-
-    filename = (
-        target
-        .replace(" ", "_")
-    )
-
-    synopsis_file = (
-        f"synopses/{filename}.md"
-    )
-
-    output_file = (
-        f"dashboard/targets/{filename}.html"
-    )
-
-    if os.path.exists(
-        synopsis_file
-    ):
-
-        with open(
-            synopsis_file,
-            "r",
-            encoding="utf-8"
-        ) as f:
-
-            md_text = (
-                f.read()
-            )
-
-        body_html = (
-            markdown.markdown(
-                md_text,
-                extensions=[
-                    "tables"
-                ]
-            )
-        )
-
-    else:
-
-        body_html = """
-        <p>
-        Synopsis not yet available.
-        </p>
-        """
-
-    with open(
-        output_file,
-        "w",
-        encoding="utf-8"
-    ) as f:
-
-        f.write(
-            f"""
-            <html>
-
-            <head>
-
-            <title>
-            {target}
-            </title>
-
-            <style>
-
-            body {{
-                font-family: Arial, sans-serif;
-                margin: 40px;
-                max-width: 900px;
-            }}
-
-            table {{
-                border-collapse: collapse;
-            }}
-
-            td, th {{
-                border: 1px solid #ccc;
-                padding: 8px;
-            }}
-
-            </style>
-
-            </head>
-
-            <body>
-
-            <p>
-            <a href="../dashboard.html">
-            &larr; Back to Dashboard
-            </a>
-            </p>
-
-            {body_html}
-
-            </body>
-
-            </html>
-            """
-        )
-
-
 ### Main program ###
 
 weather_data = {}
@@ -547,140 +373,11 @@ for target in targets:
     )
 
 
+target_states = {}
 outburst_scores = {}
 days_since_observation = {}
 priority_scores = {}
 needs_observations = []
-
-for target in targets:
-
-    df = all_data[target]
-
-    if len(df) == 0:
-
-        outburst_scores[target] = None
-
-        days_since_observation[target] = None
-
-        target_row = targets_df[
-            targets_df["name"] == target
-        ].iloc[0]
-
-        tier = target_row["tier"]
-
-        tier_weight = {
-            1: 100,
-            2: 50,
-            3: 0
-        }
-
-        priority_scores[target] = (
-            tier_weight[tier] + 100
-        )
-
-        needs_observations.append(
-            (
-                target,
-                float("inf")
-            )
-        )
-
-        continue
-
-
-    mags = pd.to_numeric(
-        df["magnitude"],
-        errors="coerce"
-    ).dropna()
-
-    if len(mags) < 5:
-
-        outburst_scores[target] = -999
-
-        latest_jd = df["jd_dbl"].max()
-
-        latest_obs = Time(
-            latest_jd,
-            format="jd"
-        ).to_datetime()
-
-        age_days = (
-            datetime.utcnow()
-            - latest_obs
-        ).days
-
-        days_since_observation[target] = age_days
-
-        priority_scores[target] = age_days
-
-        continue
-
-
-    baseline = mags.median()
-
-    recent_mag = mags.tail(
-        min(5, len(mags))
-    ).median()
-
-    score = baseline - recent_mag
-
-    outburst_scores[target] = score
-
-    latest_jd = df["jd_dbl"].max()
-
-    latest_obs = Time(
-        latest_jd,
-        format="jd"
-    ).to_datetime()
-
-    age_days = (
-        datetime.utcnow()
-        - latest_obs
-    ).days
-
-    days_since_observation[target] = age_days
-
-    target_row = targets_df[
-        targets_df["name"] == target
-    ].iloc[0]
-
-    tier = target_row["tier"]
-
-    tier_weight = {
-        1: 100,
-        2: 50,
-        3: 0
-    }
-
-    priority = (
-        tier_weight[tier]
-        + max(0, score) * 20
-        + min(age_days, 60)
-    )
-
-    priority_scores[target] = priority
-    
-    tier_thresholds = {
-        1: 4,
-        2: 7,
-        3: 14
-    }
-
-    threshold = tier_thresholds[tier]
-
-    if age_days >= threshold:
-        needs_observations.append(
-            (
-                target,
-                age_days
-            )
-        ) 
-
-sorted_targets = sorted(
-    targets,
-    key=lambda t: priority_scores.get(t, -999),
-    reverse=True
-)
 
 visibility_data = {}
 
@@ -759,17 +456,63 @@ for target in targets:
         "rankings": site_rankings
     }
 
-print()
+for target in targets:
 
-print(target)
+    df = all_data[target]
 
-for site in site_rankings[:3]:
+    target_row = targets_df[
+        targets_df["name"] == target
+    ].iloc[0]
 
-    print(
-        site["site"],
-        site["cloud_cover"],
-        site["hours"]
+    tier = target_row["tier"]
+
+    observable_hours = (
+        visibility_data[target]["hours"]
     )
+
+    state = evaluate_target(
+        df,
+        tier,
+        observable_hours
+    )
+
+    target_states[target] = state
+
+    outburst_scores[target] = (
+        state.outburst_score
+    )
+
+    days_since_observation[target] = (
+        state.days_since_observation
+    )
+
+    priority_scores[target] = (
+        state.priority_score
+    )
+
+    if state.no_recent_data:
+
+        needs_observations.append(
+            (
+                target,
+                float("inf")
+            )
+        )
+
+    elif state.needs_observation:
+
+        needs_observations.append(
+            (
+                target,
+                state.days_since_observation
+            )
+        )
+
+sorted_targets = sorted(
+    targets,
+    key=lambda t: priority_scores.get(t, -999),
+    reverse=True
+)
 
 needs_observations.sort(
     key=lambda x: x[1],
@@ -883,24 +626,13 @@ for target in sorted_tonight_targets[:5]:
 
     if best_hours < 1:
 
-        if info == float("inf"):
-
-            html += f"""
-            <li>
-            <b>{target}</b><br>
-            No observations in last 100 days<br>
-            Visibility: Not Observable Tonight
-            </li>
-            """
-        else:
-
-            html += f"""
-            <li>
-            <b>{target}</b><br>
-            {info} days since last observation<br>
-            Visibility: Not Observable Tonight
-            </li>
-            """
+        html += f"""
+        <li>
+        <b>{target}</b><br>
+        Priority: {tonight_priority_scores[target]:.1f}<br>
+        Visibility: Not Observable Tonight
+        </li>
+        """
 
         continue
 
